@@ -25,26 +25,9 @@
         .wait-turn { background-color: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; }
         .score-board { display: flex; justify-content: center; gap: 15px; font-weight: bold; flex-wrap: wrap; margin-top: 10px; font-size: 0.9em; }
         
-        /* 盤面（スマホで見切れないレスポンシブ設計） */
-        #board { 
-            display: grid; 
-            width: 100%; 
-            background: #333; 
-            padding: 4px; 
-            border-radius: 4px; 
-            box-sizing: border-box;
-            gap: 2px;
-        }
-        .cell { 
-            background: #2e8b57; 
-            width: 100%; 
-            aspect-ratio: 1; /* 正方形を維持 */
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            cursor: pointer; 
-            position: relative; 
-        }
+        /* 盤面 */
+        #board { display: grid; width: 100%; background: #333; padding: 4px; border-radius: 4px; box-sizing: border-box; gap: 2px; }
+        .cell { background: #2e8b57; width: 100%; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative; }
         .cell:hover { background: #3cb371; }
         .disc { width: 85%; height: 85%; border-radius: 50%; box-shadow: 1px 1px 3px rgba(0,0,0,0.5); position: absolute; }
         .black { background: #222; }
@@ -69,8 +52,8 @@
             <label>プレイ人数（新規作成時のみ有効）</label>
             <select id="setting-players">
                 <option value="2">2人対戦</option>
-                <option value="3" selected>3人対戦</option>
-                <option value="4">4人対戦</option>
+                <option value="3">3人対戦</option>
+                <option value="4" selected>4人対戦</option>
             </select>
         </div>
         
@@ -98,7 +81,6 @@
         <div id="board"></div>
     </div>
 
-    <!-- 結果発表画面 -->
     <div id="result-modal">
         <div class="result-content">
             <h2>ゲーム終了！</h2>
@@ -130,18 +112,17 @@
         let myColor = 'spectator';
         let localState = null;
         
-        // 設定変数（Firebaseから取得して上書きされる）
         let boardSize = 10;
-        let maxPlayers = 3;
+        let maxPlayers = 4;
 
         const ALL_PLAYERS = ['black', 'white', 'red', 'blue'];
         const PLAYER_NAMES = { 'black': '⚫黒', 'white': '⚪白', 'red': '🔴赤', 'blue': '🔵青' };
         const DIRECTIONS = [[-1,-1], [-1,0], [-1,1], [0,-1], [0,1], [1,-1], [1,0], [1,1]];
 
-        // 人数とサイズに応じた初期盤面の生成
+        // 【修正】即死を回避するための初期盤面生成ロジック
         function createInitialBoard(size, playersCount) {
             const board = Array(size).fill(null).map(() => Array(size).fill(null));
-            const m = size / 2;
+            const m = Math.floor(size / 2);
             
             if (playersCount === 2) {
                 board[m-1][m-1] = 'white'; board[m][m] = 'white';
@@ -151,8 +132,14 @@
                 board[m-1][m] = 'white'; board[m][m-1] = 'white';
                 if(size >= 6) { board[m-2][m-1] = 'red'; board[m+1][m] = 'red'; }
             } else if (playersCount === 4) {
-                board[m-1][m-1] = 'black'; board[m-1][m] = 'white';
-                board[m][m-1] = 'red'; board[m][m] = 'blue';
+                // 4人の場合は中央に4x4（各プレイヤー4個ずつ）を配置して即死を防ぐ
+                const p = ['black', 'white', 'red', 'blue'];
+                for(let r = 0; r < 4; r++) {
+                    for(let c = 0; c < 4; c++) {
+                        let colorIdx = (c - r + 4) % 4;
+                        board[m - 2 + r][m - 2 + c] = p[colorIdx];
+                    }
+                }
             }
             return board;
         }
@@ -180,7 +167,6 @@
             const snapshot = await get(roomRef);
 
             if (!snapshot.exists()) {
-                // 新規部屋作成
                 boardSize = reqSize;
                 maxPlayers = reqPlayers;
                 const newState = { 
@@ -195,7 +181,6 @@
                 await set(roomRef, newState);
                 myColor = isSpectator ? 'spectator' : 'black';
             } else {
-                // 既存部屋に参加（部屋の設定を強制適用）
                 const state = snapshot.val();
                 boardSize = state.settings.size;
                 maxPlayers = state.settings.maxPlayers;
@@ -213,7 +198,7 @@
                         await update(roomRef, { players: state.players });
                         myColor = availableColor;
                     } else {
-                        myColor = 'spectator'; // 万が一空きがない場合
+                        myColor = 'spectator';
                     }
                 }
             }
@@ -221,13 +206,11 @@
             document.getElementById('login').style.display = 'none';
             document.getElementById('game').style.display = 'block';
             
-            // 盤面のマス目をCSSで動的に分割
             document.getElementById('board').style.gridTemplateColumns = `repeat(${boardSize}, 1fr)`;
 
             const roleStr = myColor === 'spectator' ? '観戦者 👀 (石は置けません)' : `プレイヤー (${PLAYER_NAMES[myColor]})`;
             document.getElementById('myRole').innerText = `あなたは: ${roleStr}`;
 
-            // リアルタイム監視
             onValue(roomRef, (snap) => {
                 const data = snap.val();
                 if (data) {
@@ -241,7 +224,7 @@
                     if(data.status === 'finished') {
                         showResults(data.board);
                         renderBoard(data.board, []);
-                        return; // 終了時は以下のUI更新をスキップ
+                        return;
                     }
                     
                     const activeColors = ALL_PLAYERS.slice(0, maxPlayers);
@@ -308,7 +291,6 @@
             localState.board[r][c] = myColor;
             flips.forEach(([fr, fc]) => localState.board[fr][fc] = myColor);
             
-            // 盤面が全て埋まったかチェック
             const isFull = localState.board.flat().every(cell => cell !== null);
             
             await update(ref(db, `rooms/${currentRoom}`), { 
@@ -325,7 +307,6 @@
             if (myColor !== activeColors[localState.turn % maxPlayers]) return;
             
             const newPasses = (localState.passes || 0) + 1;
-            // 全員が連続でパスしたらゲーム終了
             const newStatus = newPasses >= maxPlayers ? 'finished' : 'playing';
 
             await update(ref(db, `rooms/${currentRoom}`), { 
@@ -351,7 +332,6 @@
             const counts = updateScoreBoard(board);
             const activeColors = ALL_PLAYERS.slice(0, maxPlayers);
             
-            // スコアが高い順に並び替え
             const results = activeColors.map(color => ({ color: color, score: counts[color] }));
             results.sort((a, b) => b.score - a.score);
             
