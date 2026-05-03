@@ -44,16 +44,36 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         import { getDatabase, ref, set, get, onValue, update } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 
-        // ★ ここにFirebaseの設定を貼り付けます ★
+        // いただいた実際の設定をここに適用しました
         const firebaseConfig = {
-            apiKey: "YOUR_API_KEY",
-            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-            databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.asia-southeast1.firebasedatabase.app",
-            projectId: "YOUR_PROJECT_ID",
-            storageBucket: "YOUR_PROJECT_ID.appspot.com",
-            messagingSenderId: "YOUR_SENDER_ID",
-            appId: "YOUR_APP_ID"
+            apiKey: "AIzaSyC7aISvsztHxXMKe3V-_6K0VhfKHvzpiDM",
+            authDomain: "multiothello.firebaseapp.com",
+            databaseURL: "https://multiothello-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "multiothello",
+            storageBucket: "multiothello.firebasestorage.app",
+            messagingSenderId: "245761206696",
+            appId: "1:245761206696:web:f01597a0da7aad0c31159d"
         };
+//         <script type="module">
+//   // Import the functions you need from the SDKs you need
+//   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
+//   // TODO: Add SDKs for Firebase products that you want to use
+//   // https://firebase.google.com/docs/web/setup#available-libraries
+
+//   // Your web app's Firebase configuration
+//   const firebaseConfig = {
+//     apiKey: "AIzaSyC7aISvsztHxXMKe3V-_6K0VhfKHvzpiDM",
+//     authDomain: "multiothello.firebaseapp.com",
+//     databaseURL: "https://multiothello-default-rtdb.asia-southeast1.firebasedatabase.app",
+//     projectId: "multiothello",
+//     storageBucket: "multiothello.firebasestorage.app",
+//     messagingSenderId: "245761206696",
+//     appId: "1:245761206696:web:f01597a0da7aad0c31159d"
+//   };
+
+//   // Initialize Firebase
+//   const app = initializeApp(firebaseConfig);
+// </script>
 
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
@@ -178,7 +198,6 @@
             const boardEl = document.getElementById('board');
             boardEl.innerHTML = '';
             for (let r = 0; r < BOARD_SIZE; r++) {
-                // Firebaseから取得した配列に未定義部分がある場合の対策
                 const row = boardData[r] || Array(BOARD_SIZE).fill(null);
                 for (let c = 0; c < BOARD_SIZE; c++) {
                     const cell = document.createElement('div');
@@ -202,24 +221,5 @@
         document.getElementById('btn-spectate').onclick = () => joinGame(true);
     </script>
 </body>
-<script type="module">
-  // Import the functions you need from the SDKs you need
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
-  // TODO: Add SDKs for Firebase products that you want to use
-  // https://firebase.google.com/docs/web/setup#available-libraries
-
-  // Your web app's Firebase configuration
-  const firebaseConfig = {
-    apiKey: "AIzaSyC7aISvsztHxXMKe3V-_6K0VhfKHvzpiDM",
-    authDomain: "multiothello.firebaseapp.com",
-    databaseURL: "https://multiothello-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId: "multiothello",
-    storageBucket: "multiothello.firebasestorage.app",
-    messagingSenderId: "245761206696",
-    appId: "1:245761206696:web:f01597a0da7aad0c31159d"
-  };
-
-  // Initialize Firebase
-  const app = initializeApp(firebaseConfig);
-</script>
+</html>
 </html>
