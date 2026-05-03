@@ -3,46 +3,109 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3人用オンラインオセロ（バグ修正版）</title>
+    <title>オンラインオセロ（多人数・可変サイズ対応）</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #f0f8ff; margin: 0; padding: 20px; }
-        #login { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 400px; margin: 50px auto; }
-        input[type="text"] { padding: 10px; font-size: 16px; margin-bottom: 15px; width: 80%; border: 1px solid #ccc; border-radius: 5px; }
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; border: none; border-radius: 5px; background: #007bff; color: white; margin: 5px; }
-        button:hover { background: #0056b3; }
-        #game { display: none; }
-        .info-panel { margin-bottom: 20px; background: white; padding: 15px; border-radius: 8px; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1); width: 350px; }
+        body { font-family: sans-serif; text-align: center; background: #f0f8ff; margin: 0; padding: 10px; }
         
-        .turn-alert { font-size: 1.2em; font-weight: bold; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
+        /* ログイン画面 */
+        #login { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 400px; margin: 30px auto; }
+        input[type="text"], select { padding: 10px; font-size: 16px; margin-bottom: 15px; width: 85%; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+        .form-group { text-align: left; margin: 0 auto 15px auto; width: 85%; }
+        .form-group label { font-size: 0.9em; font-weight: bold; color: #555; display: block; margin-bottom: 5px; }
+        button { padding: 12px 20px; font-size: 16px; cursor: pointer; border: none; border-radius: 5px; background: #007bff; color: white; margin: 5px; width: 85%; box-sizing: border-box; }
+        button:hover { background: #0056b3; }
+        #btn-spectate { background: #6c757d; } #btn-spectate:hover { background: #5a6268; }
+        
+        #game { display: none; max-width: 600px; margin: 0 auto; }
+        
+        /* 情報パネル */
+        .info-panel { margin-bottom: 15px; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); width: 100%; box-sizing: border-box; }
+        .turn-alert { font-size: 1.1em; font-weight: bold; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
         .my-turn { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .wait-turn { background-color: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; }
+        .score-board { display: flex; justify-content: center; gap: 15px; font-weight: bold; flex-wrap: wrap; margin-top: 10px; font-size: 0.9em; }
         
-        #board { display: grid; grid-template-columns: repeat(10, 40px); gap: 2px; justify-content: center; background: #333; padding: 4px; width: max-content; margin: 0 auto; border-radius: 4px; }
-        .cell { width: 40px; height: 40px; background: #2e8b57; display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative; }
+        /* 盤面（スマホで見切れないレスポンシブ設計） */
+        #board { 
+            display: grid; 
+            width: 100%; 
+            background: #333; 
+            padding: 4px; 
+            border-radius: 4px; 
+            box-sizing: border-box;
+            gap: 2px;
+        }
+        .cell { 
+            background: #2e8b57; 
+            width: 100%; 
+            aspect-ratio: 1; /* 正方形を維持 */
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            cursor: pointer; 
+            position: relative; 
+        }
         .cell:hover { background: #3cb371; }
-        .disc { width: 34px; height: 34px; border-radius: 50%; box-shadow: 1px 1px 3px rgba(0,0,0,0.5); position: absolute; }
+        .disc { width: 85%; height: 85%; border-radius: 50%; box-shadow: 1px 1px 3px rgba(0,0,0,0.5); position: absolute; }
         .black { background: #222; }
         .white { background: #fdfdfd; }
         .red { background: #e60000; }
-        .cell.hint::after { content: ''; width: 15px; height: 15px; background: rgba(255, 255, 255, 0.4); border-radius: 50%; position: absolute; }
+        .blue { background: #007bff; }
+        .cell.hint::after { content: ''; width: 25%; height: 25%; background: rgba(255, 255, 255, 0.5); border-radius: 50%; position: absolute; }
+
+        /* 結果発表モーダル */
+        #result-modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; }
+        .result-content { background: white; padding: 30px; border-radius: 10px; text-align: center; max-width: 80%; width: 350px; }
+        .result-content h2 { color: #d32f2f; margin-top: 0; }
+        .result-scores { text-align: left; font-size: 1.2em; line-height: 1.8; margin: 20px 0; display: inline-block; }
     </style>
 </head>
 <body>
     <div id="login">
-        <h2>3人用オセロ</h2>
+        <h2>オンラインオセロ</h2>
         <input type="text" id="room" placeholder="合言葉（例: test1）">
-        <br>
+        
+        <div class="form-group">
+            <label>プレイ人数（新規作成時のみ有効）</label>
+            <select id="setting-players">
+                <option value="2">2人対戦</option>
+                <option value="3" selected>3人対戦</option>
+                <option value="4">4人対戦</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label>盤面サイズ（新規作成時のみ有効）</label>
+            <select id="setting-size">
+                <option value="6">6 × 6（すぐ終わる）</option>
+                <option value="8">8 × 8（公式サイズ）</option>
+                <option value="10" selected>10 × 10（少し広め）</option>
+                <option value="12">12 × 12（長期戦）</option>
+            </select>
+        </div>
+
         <button id="btn-join">対戦に参加する</button>
-        <button id="btn-spectate" style="background: #6c757d;">観戦する</button>
+        <button id="btn-spectate">観戦する</button>
     </div>
 
     <div id="game">
         <div class="info-panel">
             <div id="myRole" style="font-weight: bold; margin-bottom: 10px; color: #333;"></div>
             <div id="status" class="turn-alert wait-turn">通信中...</div>
+            <div id="scoreBoard" class="score-board"></div>
             <button id="btn-pass" style="background: #ffc107; color: black; display: none; width: 100%;">置ける場所がないのでパスする</button>
         </div>
         <div id="board"></div>
+    </div>
+
+    <!-- 結果発表画面 -->
+    <div id="result-modal">
+        <div class="result-content">
+            <h2>ゲーム終了！</h2>
+            <div id="result-text" class="result-scores"></div>
+            <br>
+            <button onclick="location.reload()">タイトルに戻る</button>
+        </div>
     </div>
 
     <script type="module">
@@ -66,26 +129,39 @@
         let currentRoom = null;
         let myColor = 'spectator';
         let localState = null;
+        
+        // 設定変数（Firebaseから取得して上書きされる）
+        let boardSize = 10;
+        let maxPlayers = 3;
 
-        const BOARD_SIZE = 10;
-        const PLAYERS = ['black', 'white', 'red'];
-        const PLAYER_NAMES = { 'black': '黒', 'white': '白', 'red': '赤' };
+        const ALL_PLAYERS = ['black', 'white', 'red', 'blue'];
+        const PLAYER_NAMES = { 'black': '⚫黒', 'white': '⚪白', 'red': '🔴赤', 'blue': '🔵青' };
         const DIRECTIONS = [[-1,-1], [-1,0], [-1,1], [0,-1], [0,1], [1,-1], [1,0], [1,1]];
 
-        function createInitialBoard() {
-            const board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
-            board[4][4] = 'black'; board[5][5] = 'black';
-            board[4][5] = 'white'; board[5][4] = 'white';
-            board[3][4] = 'red';   board[6][5] = 'red';
+        // 人数とサイズに応じた初期盤面の生成
+        function createInitialBoard(size, playersCount) {
+            const board = Array(size).fill(null).map(() => Array(size).fill(null));
+            const m = size / 2;
+            
+            if (playersCount === 2) {
+                board[m-1][m-1] = 'white'; board[m][m] = 'white';
+                board[m-1][m] = 'black'; board[m][m-1] = 'black';
+            } else if (playersCount === 3) {
+                board[m-1][m-1] = 'black'; board[m][m] = 'black';
+                board[m-1][m] = 'white'; board[m][m-1] = 'white';
+                if(size >= 6) { board[m-2][m-1] = 'red'; board[m+1][m] = 'red'; }
+            } else if (playersCount === 4) {
+                board[m-1][m-1] = 'black'; board[m-1][m] = 'white';
+                board[m][m-1] = 'red'; board[m][m] = 'blue';
+            }
             return board;
         }
 
-        // ★追加：Firebaseが勝手に削除した空マスを復元する関数★
-        function parseBoard(fbBoard) {
+        function parseBoard(fbBoard, size) {
             const safeBoard = [];
-            for (let r = 0; r < BOARD_SIZE; r++) {
+            for (let r = 0; r < size; r++) {
                 safeBoard[r] = [];
-                for (let c = 0; c < BOARD_SIZE; c++) {
+                for (let c = 0; c < size; c++) {
                     safeBoard[r][c] = (fbBoard && fbBoard[r] && fbBoard[r][c]) ? fbBoard[r][c] : null;
                 }
             }
@@ -97,43 +173,79 @@
             if (!roomInput) return alert("合言葉を入力してください");
             currentRoom = roomInput;
 
+            const reqPlayers = parseInt(document.getElementById('setting-players').value);
+            const reqSize = parseInt(document.getElementById('setting-size').value);
+
             const roomRef = ref(db, `rooms/${currentRoom}`);
             const snapshot = await get(roomRef);
 
             if (!snapshot.exists()) {
-                const newState = { board: createInitialBoard(), turn: 0, players: { [myClientId]: 'black' } };
+                // 新規部屋作成
+                boardSize = reqSize;
+                maxPlayers = reqPlayers;
+                const newState = { 
+                    settings: { size: boardSize, maxPlayers: maxPlayers },
+                    board: createInitialBoard(boardSize, maxPlayers), 
+                    turn: 0, 
+                    passes: 0,
+                    status: 'playing',
+                    players: { [myClientId]: 'black' } 
+                };
                 if (isSpectator) newState.players = {};
                 await set(roomRef, newState);
                 myColor = isSpectator ? 'spectator' : 'black';
             } else {
+                // 既存部屋に参加（部屋の設定を強制適用）
                 const state = snapshot.val();
+                boardSize = state.settings.size;
+                maxPlayers = state.settings.maxPlayers;
+                
                 state.players = state.players || {};
                 const currentPlayers = Object.values(state.players);
 
-                if (isSpectator || currentPlayers.length >= 3) {
+                if (isSpectator || currentPlayers.length >= maxPlayers || state.status === 'finished') {
                     myColor = 'spectator';
                 } else {
-                    const availableColor = PLAYERS.find(c => !currentPlayers.includes(c));
-                    state.players[myClientId] = availableColor;
-                    await update(roomRef, { players: state.players });
-                    myColor = availableColor;
+                    const activeColors = ALL_PLAYERS.slice(0, maxPlayers);
+                    const availableColor = activeColors.find(c => !currentPlayers.includes(c));
+                    if(availableColor) {
+                        state.players[myClientId] = availableColor;
+                        await update(roomRef, { players: state.players });
+                        myColor = availableColor;
+                    } else {
+                        myColor = 'spectator'; // 万が一空きがない場合
+                    }
                 }
             }
 
             document.getElementById('login').style.display = 'none';
             document.getElementById('game').style.display = 'block';
             
+            // 盤面のマス目をCSSで動的に分割
+            document.getElementById('board').style.gridTemplateColumns = `repeat(${boardSize}, 1fr)`;
+
             const roleStr = myColor === 'spectator' ? '観戦者 👀 (石は置けません)' : `プレイヤー (${PLAYER_NAMES[myColor]})`;
             document.getElementById('myRole').innerText = `あなたは: ${roleStr}`;
 
+            // リアルタイム監視
             onValue(roomRef, (snap) => {
                 const data = snap.val();
                 if (data) {
-                    // ここで必ず盤面を完全な10x10の配列に復元する
-                    data.board = parseBoard(data.board);
+                    boardSize = data.settings.size;
+                    maxPlayers = data.settings.maxPlayers;
+                    data.board = parseBoard(data.board, boardSize);
                     localState = data;
                     
-                    const turnColor = PLAYERS[data.turn % 3];
+                    updateScoreBoard(data.board);
+                    
+                    if(data.status === 'finished') {
+                        showResults(data.board);
+                        renderBoard(data.board, []);
+                        return; // 終了時は以下のUI更新をスキップ
+                    }
+                    
+                    const activeColors = ALL_PLAYERS.slice(0, maxPlayers);
+                    const turnColor = activeColors[data.turn % maxPlayers];
                     const statusEl = document.getElementById('status');
                     const passBtn = document.getElementById('btn-pass');
                     
@@ -164,11 +276,11 @@
             DIRECTIONS.forEach(([dr, dc]) => {
                 let nr = r + dr, nc = c + dc;
                 let currentFlips = [];
-                while(nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] !== null && board[nr][nc] !== color) {
+                while(nr >= 0 && nr < boardSize && nc >= 0 && nc < boardSize && board[nr][nc] !== null && board[nr][nc] !== color) {
                     currentFlips.push([nr, nc]);
                     nr += dr; nc += dc;
                 }
-                if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === color && currentFlips.length > 0) {
+                if (nr >= 0 && nr < boardSize && nc >= 0 && nc < boardSize && board[nr][nc] === color && currentFlips.length > 0) {
                     allFlips.push(...currentFlips);
                 }
             });
@@ -177,8 +289,8 @@
 
         function getAllValidMoves(board, color) {
             let validMoves = [];
-            for (let r = 0; r < BOARD_SIZE; r++) {
-                for (let c = 0; c < BOARD_SIZE; c++) {
+            for (let r = 0; r < boardSize; r++) {
+                for (let c = 0; c < boardSize; c++) {
                     if (getFlips(board, r, c, color).length > 0) validMoves.push(`${r},${c}`);
                 }
             }
@@ -186,8 +298,9 @@
         }
 
         async function makeMove(r, c) {
-            if (myColor === 'spectator' || !localState) return;
-            if (myColor !== PLAYERS[localState.turn % 3]) return;
+            if (myColor === 'spectator' || !localState || localState.status === 'finished') return;
+            const activeColors = ALL_PLAYERS.slice(0, maxPlayers);
+            if (myColor !== activeColors[localState.turn % maxPlayers]) return;
 
             const flips = getFlips(localState.board, r, c, myColor);
             if (flips.length === 0) return;
@@ -195,20 +308,72 @@
             localState.board[r][c] = myColor;
             flips.forEach(([fr, fc]) => localState.board[fr][fc] = myColor);
             
-            await update(ref(db, `rooms/${currentRoom}`), { board: localState.board, turn: localState.turn + 1 });
+            // 盤面が全て埋まったかチェック
+            const isFull = localState.board.flat().every(cell => cell !== null);
+            
+            await update(ref(db, `rooms/${currentRoom}`), { 
+                board: localState.board, 
+                turn: localState.turn + 1,
+                passes: 0,
+                status: isFull ? 'finished' : 'playing'
+            });
         }
 
         async function passTurn() {
-            if (myColor === 'spectator' || !localState) return;
-            if (myColor !== PLAYERS[localState.turn % 3]) return;
-            await update(ref(db, `rooms/${currentRoom}`), { turn: localState.turn + 1 });
+            if (myColor === 'spectator' || !localState || localState.status === 'finished') return;
+            const activeColors = ALL_PLAYERS.slice(0, maxPlayers);
+            if (myColor !== activeColors[localState.turn % maxPlayers]) return;
+            
+            const newPasses = (localState.passes || 0) + 1;
+            // 全員が連続でパスしたらゲーム終了
+            const newStatus = newPasses >= maxPlayers ? 'finished' : 'playing';
+
+            await update(ref(db, `rooms/${currentRoom}`), { 
+                turn: localState.turn + 1,
+                passes: newPasses,
+                status: newStatus
+            });
+        }
+
+        function updateScoreBoard(board) {
+            const counts = { black: 0, white: 0, red: 0, blue: 0 };
+            board.flat().forEach(cell => { if(cell) counts[cell]++; });
+            
+            let html = '';
+            ALL_PLAYERS.slice(0, maxPlayers).forEach(color => {
+                html += `<span>${PLAYER_NAMES[color]}: ${counts[color]}</span>`;
+            });
+            document.getElementById('scoreBoard').innerHTML = html;
+            return counts;
+        }
+
+        function showResults(board) {
+            const counts = updateScoreBoard(board);
+            const activeColors = ALL_PLAYERS.slice(0, maxPlayers);
+            
+            // スコアが高い順に並び替え
+            const results = activeColors.map(color => ({ color: color, score: counts[color] }));
+            results.sort((a, b) => b.score - a.score);
+            
+            let html = '';
+            results.forEach((r, index) => {
+                const rank = index + 1;
+                html += `<div><strong>${rank}位</strong>: ${PLAYER_NAMES[r.color]} (${r.score}枚)</div>`;
+            });
+            
+            document.getElementById('status').innerText = "ゲーム終了！";
+            document.getElementById('status').className = "turn-alert wait-turn";
+            document.getElementById('btn-pass').style.display = 'none';
+            
+            document.getElementById('result-text').innerHTML = html;
+            document.getElementById('result-modal').style.display = 'flex';
         }
 
         function renderBoard(boardData, hints = []) {
             const boardEl = document.getElementById('board');
             boardEl.innerHTML = '';
-            for (let r = 0; r < BOARD_SIZE; r++) {
-                for (let c = 0; c < BOARD_SIZE; c++) {
+            for (let r = 0; r < boardSize; r++) {
+                for (let c = 0; c < boardSize; c++) {
                     const cell = document.createElement('div');
                     cell.className = 'cell';
                     if (hints.includes(`${r},${c}`)) cell.className += ' hint';
