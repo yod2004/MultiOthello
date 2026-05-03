@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3人用オンラインオセロ（決定版）</title>
+    <title>3人用オンラインオセロ（バグ修正版）</title>
     <style>
         body { font-family: sans-serif; text-align: center; background: #f0f8ff; margin: 0; padding: 20px; }
         #login { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 400px; margin: 50px auto; }
@@ -13,7 +13,6 @@
         #game { display: none; }
         .info-panel { margin-bottom: 20px; background: white; padding: 15px; border-radius: 8px; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1); width: 350px; }
         
-        /* 手番の分かりやすい表示用 */
         .turn-alert { font-size: 1.2em; font-weight: bold; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
         .my-turn { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .wait-turn { background-color: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; }
@@ -25,15 +24,13 @@
         .black { background: #222; }
         .white { background: #fdfdfd; }
         .red { background: #e60000; }
-        /* ヒント（置ける場所）のスタイル */
         .cell.hint::after { content: ''; width: 15px; height: 15px; background: rgba(255, 255, 255, 0.4); border-radius: 50%; position: absolute; }
     </style>
 </head>
 <body>
     <div id="login">
         <h2>3人用オセロ</h2>
-        <p style="font-size: 0.9em; color: #555;">※過去の合言葉だと満室で観戦者になる場合があります。<br>新しい合言葉をお試しください。</p>
-        <input type="text" id="room" placeholder="合言葉（例: test999）">
+        <input type="text" id="room" placeholder="合言葉（例: test1）">
         <br>
         <button id="btn-join">対戦に参加する</button>
         <button id="btn-spectate" style="background: #6c757d;">観戦する</button>
@@ -52,7 +49,6 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         import { getDatabase, ref, set, get, onValue, update } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 
-        // いただいたFirebase設定
         const firebaseConfig = {
             apiKey: "AIzaSyC7aISvsztHxXMKe3V-_6K0VhfKHvzpiDM",
             authDomain: "multiothello.firebaseapp.com",
@@ -82,6 +78,18 @@
             board[4][5] = 'white'; board[5][4] = 'white';
             board[3][4] = 'red';   board[6][5] = 'red';
             return board;
+        }
+
+        // ★追加：Firebaseが勝手に削除した空マスを復元する関数★
+        function parseBoard(fbBoard) {
+            const safeBoard = [];
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                safeBoard[r] = [];
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    safeBoard[r][c] = (fbBoard && fbBoard[r] && fbBoard[r][c]) ? fbBoard[r][c] : null;
+                }
+            }
+            return safeBoard;
         }
 
         async function joinGame(isSpectator) {
@@ -121,30 +129,30 @@
             onValue(roomRef, (snap) => {
                 const data = snap.val();
                 if (data) {
+                    // ここで必ず盤面を完全な10x10の配列に復元する
+                    data.board = parseBoard(data.board);
                     localState = data;
+                    
                     const turnColor = PLAYERS[data.turn % 3];
                     const statusEl = document.getElementById('status');
                     const passBtn = document.getElementById('btn-pass');
                     
                     if (myColor === turnColor) {
-                        // 自分の番
                         statusEl.className = 'turn-alert my-turn';
                         statusEl.innerText = `🟢 あなたの番です！`;
                         const hints = getAllValidMoves(data.board, myColor);
                         renderBoard(data.board, hints);
                         
-                        // 置ける場所がない場合はパスボタンを表示
                         if (hints.length === 0) {
                             passBtn.style.display = 'block';
                         } else {
                             passBtn.style.display = 'none';
                         }
                     } else {
-                        // 相手の番（または観戦者）
                         statusEl.className = 'turn-alert wait-turn';
                         statusEl.innerText = `⏳ ${PLAYER_NAMES[turnColor]} の手番を待っています...`;
                         passBtn.style.display = 'none';
-                        renderBoard(data.board, []); // ヒントは表示しない
+                        renderBoard(data.board, []);
                     }
                 }
             });
@@ -200,16 +208,15 @@
             const boardEl = document.getElementById('board');
             boardEl.innerHTML = '';
             for (let r = 0; r < BOARD_SIZE; r++) {
-                const row = boardData[r] || Array(BOARD_SIZE).fill(null);
                 for (let c = 0; c < BOARD_SIZE; c++) {
                     const cell = document.createElement('div');
                     cell.className = 'cell';
                     if (hints.includes(`${r},${c}`)) cell.className += ' hint';
                     if (myColor !== 'spectator') cell.onclick = () => makeMove(r, c);
                     
-                    if (row[c]) {
+                    if (boardData[r][c]) {
                         const disc = document.createElement('div');
-                        disc.className = `disc ${row[c]}`;
+                        disc.className = `disc ${boardData[r][c]}`;
                         cell.appendChild(disc);
                     }
                     boardEl.appendChild(cell);
