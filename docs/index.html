@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3人用オンラインオセロ（サーバー不要版）</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #f0f8ff; margin: 0; padding: 20px; }
+        #login { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 400px; margin: 50px auto; }
+        input[type="text"] { padding: 10px; font-size: 16px; margin-bottom: 15px; width: 80%; border: 1px solid #ccc; border-radius: 5px; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; border: none; border-radius: 5px; background: #007bff; color: white; margin: 5px; }
+        button:hover { background: #0056b3; }
+        #game { display: none; }
+        .info-panel { margin-bottom: 20px; background: white; padding: 15px; border-radius: 8px; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .status { font-weight: bold; font-size: 1.2em; margin: 5px 0; }
+        #board { display: grid; grid-template-columns: repeat(10, 40px); gap: 2px; justify-content: center; background: #333; padding: 4px; width: max-content; margin: 0 auto; border-radius: 4px; }
+        .cell { width: 40px; height: 40px; background: #2e8b57; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        .cell:hover { background: #3cb371; }
+        .disc { width: 34px; height: 34px; border-radius: 50%; box-shadow: 1px 1px 3px rgba(0,0,0,0.5); }
+        .black { background: #222; }
+        .white { background: #fdfdfd; }
+        .red { background: #e60000; }
+    </style>
+</head>
+<body>
+    <div id="login">
+        <h2>3人用オセロ</h2>
+        <input type="text" id="room" placeholder="合言葉（例: room123）">
+        <br>
+        <button id="btn-join">対戦に参加する</button>
+        <button id="btn-spectate" style="background: #6c757d;">観戦する</button>
+    </div>
+
+    <div id="game">
+        <div class="info-panel">
+            <div class="status" id="myRole"></div>
+            <div class="status" id="status"></div>
+        </div>
+        <div id="board"></div>
+    </div>
+
+    <!-- Firebase SDK の読み込み -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+        import { getDatabase, ref, set, get, onValue, update } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
+
+        // ★ ここにFirebaseの設定を貼り付けます ★
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+            databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.asia-southeast1.firebasedatabase.app",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT_ID.appspot.com",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        // クライアントを識別するランダムID
+        const myClientId = Math.random().toString(36).substring(2, 15);
+        let currentRoom = null;
+        let myColor = 'spectator';
+        let localState = null;
+
+        const BOARD_SIZE = 10;
+        const PLAYERS = ['black', 'white', 'red'];
+        const PLAYER_NAMES = { 'black': '黒', 'white': '白', 'red': '赤' };
+
+        // 初期盤面の生成
+        function createInitialBoard() {
+            const board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
+            board[4][4] = 'black'; board[5][5] = 'black';
+            board[4][5] = 'white'; board[5][4] = 'white';
+            board[3][4] = 'red';   board[6][5] = 'red';
+            return board;
+        }
+
+        // 部屋に参加する処理
+        async function joinGame(isSpectator) {
+            const roomInput = document.getElementById('room').value.trim();
+            if (!roomInput) return alert("合言葉を入力してください");
+            currentRoom = roomInput;
+
+            const roomRef = ref(db, `rooms/${currentRoom}`);
+            const snapshot = await get(roomRef);
+
+            if (!snapshot.exists()) {
+                // 部屋が存在しなければ新規作成
+                const newState = {
+                    board: createInitialBoard(),
+                    turn: 0,
+                    players: { [myClientId]: 'black' }
+                };
+                if (isSpectator) newState.players = {}; // 観戦者はプレイヤーリストに入れない
+                await set(roomRef, newState);
+                myColor = isSpectator ? 'spectator' : 'black';
+            } else {
+                // 既存の部屋に参加
+                const state = snapshot.val();
+                state.players = state.players || {};
+                const currentPlayers = Object.values(state.players);
+
+                if (isSpectator || currentPlayers.length >= 3) {
+                    myColor = 'spectator';
+                } else {
+                    const availableColor = PLAYERS.find(c => !currentPlayers.includes(c));
+                    state.players[myClientId] = availableColor;
+                    await update(roomRef, { players: state.players });
+                    myColor = availableColor;
+                }
+            }
+
+            document.getElementById('login').style.display = 'none';
+            document.getElementById('game').style.display = 'block';
+
+            const roleStr = myColor === 'spectator' ? '観戦者 👀' : `プレイヤー (${PLAYER_NAMES[myColor]})`;
+            document.getElementById('myRole').innerText = `あなたは: ${roleStr}`;
+
+            // データベースの変更を監視して画面を更新
+            onValue(roomRef, (snap) => {
+                const data = snap.val();
+                if (data) {
+                    localState = data;
+                    renderBoard(data.board);
+                    const turnColor = PLAYERS[data.turn % 3];
+                    document.getElementById('status').innerText = `現在の手番: ${PLAYER_NAMES[turnColor]}`;
+                }
+            });
+        }
+
+        // 石を置く処理（データベース更新）
+        async function makeMove(r, c) {
+            if (myColor === 'spectator') return;
+            if (!localState) return;
+            
+            const turnColor = PLAYERS[localState.turn % 3];
+            if (myColor !== turnColor) return; // 自分の番じゃない
+            if (localState.board[r][c] !== null) return; // すでに石がある
+
+            const directions = [[-1,-1], [-1,0], [-1,1], [0,-1], [0,1], [1,-1], [1,0], [1,1]];
+            let validMove = false;
+            let flips = [];
+
+            directions.forEach(([dr, dc]) => {
+                let nr = r + dr, nc = c + dc;
+                let currentFlips = [];
+                
+                while(nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && localState.board[nr][nc] !== null && localState.board[nr][nc] !== myColor) {
+                    currentFlips.push([nr, nc]);
+                    nr += dr; nc += dc;
+                }
+                
+                if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && localState.board[nr][nc] === myColor && currentFlips.length > 0) {
+                    validMove = true;
+                    flips.push(...currentFlips);
+                }
+            });
+
+            if (validMove) {
+                // ローカルの盤面データを更新してFirebaseに送信
+                localState.board[r][c] = myColor;
+                flips.forEach(([fr, fc]) => {
+                    localState.board[fr][fc] = myColor;
+                });
+                
+                const roomRef = ref(db, `rooms/${currentRoom}`);
+                await update(roomRef, {
+                    board: localState.board,
+                    turn: localState.turn + 1
+                });
+            }
+        }
+
+        // 盤面の描画
+        function renderBoard(boardData) {
+            const boardEl = document.getElementById('board');
+            boardEl.innerHTML = '';
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                // Firebaseから取得した配列に未定義部分がある場合の対策
+                const row = boardData[r] || Array(BOARD_SIZE).fill(null);
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'cell';
+                    if (myColor !== 'spectator') {
+                        cell.onclick = () => makeMove(r, c);
+                    }
+                    
+                    if (row[c]) {
+                        const disc = document.createElement('div');
+                        disc.className = `disc ${row[c]}`;
+                        cell.appendChild(disc);
+                    }
+                    boardEl.appendChild(cell);
+                }
+            }
+        }
+
+        // ボタンのイベント登録
+        document.getElementById('btn-join').onclick = () => joinGame(false);
+        document.getElementById('btn-spectate').onclick = () => joinGame(true);
+    </script>
+</body>
+<script type="module">
+  // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.1/firebase-app.js";
+  // TODO: Add SDKs for Firebase products that you want to use
+  // https://firebase.google.com/docs/web/setup#available-libraries
+
+  // Your web app's Firebase configuration
+  const firebaseConfig = {
+    apiKey: "AIzaSyC7aISvsztHxXMKe3V-_6K0VhfKHvzpiDM",
+    authDomain: "multiothello.firebaseapp.com",
+    databaseURL: "https://multiothello-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "multiothello",
+    storageBucket: "multiothello.firebasestorage.app",
+    messagingSenderId: "245761206696",
+    appId: "1:245761206696:web:f01597a0da7aad0c31159d"
+  };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+</script>
+</html>
