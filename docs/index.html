@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3人用オンラインオセロ（サーバー不要版）</title>
+    <title>3人用オンラインオセロ（決定版）</title>
     <style>
         body { font-family: sans-serif; text-align: center; background: #f0f8ff; margin: 0; padding: 20px; }
         #login { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 400px; margin: 50px auto; }
@@ -11,21 +11,29 @@
         button { padding: 10px 20px; font-size: 16px; cursor: pointer; border: none; border-radius: 5px; background: #007bff; color: white; margin: 5px; }
         button:hover { background: #0056b3; }
         #game { display: none; }
-        .info-panel { margin-bottom: 20px; background: white; padding: 15px; border-radius: 8px; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .status { font-weight: bold; font-size: 1.2em; margin: 5px 0; }
+        .info-panel { margin-bottom: 20px; background: white; padding: 15px; border-radius: 8px; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1); width: 350px; }
+        
+        /* 手番の分かりやすい表示用 */
+        .turn-alert { font-size: 1.2em; font-weight: bold; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
+        .my-turn { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .wait-turn { background-color: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; }
+        
         #board { display: grid; grid-template-columns: repeat(10, 40px); gap: 2px; justify-content: center; background: #333; padding: 4px; width: max-content; margin: 0 auto; border-radius: 4px; }
-        .cell { width: 40px; height: 40px; background: #2e8b57; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        .cell { width: 40px; height: 40px; background: #2e8b57; display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative; }
         .cell:hover { background: #3cb371; }
-        .disc { width: 34px; height: 34px; border-radius: 50%; box-shadow: 1px 1px 3px rgba(0,0,0,0.5); }
+        .disc { width: 34px; height: 34px; border-radius: 50%; box-shadow: 1px 1px 3px rgba(0,0,0,0.5); position: absolute; }
         .black { background: #222; }
         .white { background: #fdfdfd; }
         .red { background: #e60000; }
+        /* ヒント（置ける場所）のスタイル */
+        .cell.hint::after { content: ''; width: 15px; height: 15px; background: rgba(255, 255, 255, 0.4); border-radius: 50%; position: absolute; }
     </style>
 </head>
 <body>
     <div id="login">
         <h2>3人用オセロ</h2>
-        <input type="text" id="room" placeholder="合言葉（例: room123）">
+        <p style="font-size: 0.9em; color: #555;">※過去の合言葉だと満室で観戦者になる場合があります。<br>新しい合言葉をお試しください。</p>
+        <input type="text" id="room" placeholder="合言葉（例: test999）">
         <br>
         <button id="btn-join">対戦に参加する</button>
         <button id="btn-spectate" style="background: #6c757d;">観戦する</button>
@@ -33,18 +41,18 @@
 
     <div id="game">
         <div class="info-panel">
-            <div class="status" id="myRole"></div>
-            <div class="status" id="status"></div>
+            <div id="myRole" style="font-weight: bold; margin-bottom: 10px; color: #333;"></div>
+            <div id="status" class="turn-alert wait-turn">通信中...</div>
+            <button id="btn-pass" style="background: #ffc107; color: black; display: none; width: 100%;">置ける場所がないのでパスする</button>
         </div>
         <div id="board"></div>
     </div>
 
-    <!-- Firebase SDK の読み込み -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
         import { getDatabase, ref, set, get, onValue, update } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-database.js";
 
-        // いただいた実際の設定をここに適用しました
+        // いただいたFirebase設定
         const firebaseConfig = {
             apiKey: "AIzaSyC7aISvsztHxXMKe3V-_6K0VhfKHvzpiDM",
             authDomain: "multiothello.firebaseapp.com",
@@ -54,12 +62,10 @@
             messagingSenderId: "245761206696",
             appId: "1:245761206696:web:f01597a0da7aad0c31159d"
         };
-        
 
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
 
-        // クライアントを識別するランダムID
         const myClientId = Math.random().toString(36).substring(2, 15);
         let currentRoom = null;
         let myColor = 'spectator';
@@ -68,8 +74,8 @@
         const BOARD_SIZE = 10;
         const PLAYERS = ['black', 'white', 'red'];
         const PLAYER_NAMES = { 'black': '黒', 'white': '白', 'red': '赤' };
+        const DIRECTIONS = [[-1,-1], [-1,0], [-1,1], [0,-1], [0,1], [1,-1], [1,0], [1,1]];
 
-        // 初期盤面の生成
         function createInitialBoard() {
             const board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null));
             board[4][4] = 'black'; board[5][5] = 'black';
@@ -78,7 +84,6 @@
             return board;
         }
 
-        // 部屋に参加する処理
         async function joinGame(isSpectator) {
             const roomInput = document.getElementById('room').value.trim();
             if (!roomInput) return alert("合言葉を入力してください");
@@ -88,17 +93,11 @@
             const snapshot = await get(roomRef);
 
             if (!snapshot.exists()) {
-                // 部屋が存在しなければ新規作成
-                const newState = {
-                    board: createInitialBoard(),
-                    turn: 0,
-                    players: { [myClientId]: 'black' }
-                };
-                if (isSpectator) newState.players = {}; // 観戦者はプレイヤーリストに入れない
+                const newState = { board: createInitialBoard(), turn: 0, players: { [myClientId]: 'black' } };
+                if (isSpectator) newState.players = {};
                 await set(roomRef, newState);
                 myColor = isSpectator ? 'spectator' : 'black';
             } else {
-                // 既存の部屋に参加
                 const state = snapshot.val();
                 state.players = state.players || {};
                 const currentPlayers = Object.values(state.players);
@@ -115,67 +114,89 @@
 
             document.getElementById('login').style.display = 'none';
             document.getElementById('game').style.display = 'block';
-
-            const roleStr = myColor === 'spectator' ? '観戦者 👀' : `プレイヤー (${PLAYER_NAMES[myColor]})`;
+            
+            const roleStr = myColor === 'spectator' ? '観戦者 👀 (石は置けません)' : `プレイヤー (${PLAYER_NAMES[myColor]})`;
             document.getElementById('myRole').innerText = `あなたは: ${roleStr}`;
 
-            // データベースの変更を監視して画面を更新
             onValue(roomRef, (snap) => {
                 const data = snap.val();
                 if (data) {
                     localState = data;
-                    renderBoard(data.board);
                     const turnColor = PLAYERS[data.turn % 3];
-                    document.getElementById('status').innerText = `現在の手番: ${PLAYER_NAMES[turnColor]}`;
+                    const statusEl = document.getElementById('status');
+                    const passBtn = document.getElementById('btn-pass');
+                    
+                    if (myColor === turnColor) {
+                        // 自分の番
+                        statusEl.className = 'turn-alert my-turn';
+                        statusEl.innerText = `🟢 あなたの番です！`;
+                        const hints = getAllValidMoves(data.board, myColor);
+                        renderBoard(data.board, hints);
+                        
+                        // 置ける場所がない場合はパスボタンを表示
+                        if (hints.length === 0) {
+                            passBtn.style.display = 'block';
+                        } else {
+                            passBtn.style.display = 'none';
+                        }
+                    } else {
+                        // 相手の番（または観戦者）
+                        statusEl.className = 'turn-alert wait-turn';
+                        statusEl.innerText = `⏳ ${PLAYER_NAMES[turnColor]} の手番を待っています...`;
+                        passBtn.style.display = 'none';
+                        renderBoard(data.board, []); // ヒントは表示しない
+                    }
                 }
             });
         }
 
-        // 石を置く処理（データベース更新）
-        async function makeMove(r, c) {
-            if (myColor === 'spectator') return;
-            if (!localState) return;
-            
-            const turnColor = PLAYERS[localState.turn % 3];
-            if (myColor !== turnColor) return; // 自分の番じゃない
-            if (localState.board[r][c] !== null) return; // すでに石がある
-
-            const directions = [[-1,-1], [-1,0], [-1,1], [0,-1], [0,1], [1,-1], [1,0], [1,1]];
-            let validMove = false;
-            let flips = [];
-
-            directions.forEach(([dr, dc]) => {
+        function getFlips(board, r, c, color) {
+            if (board[r][c] !== null) return [];
+            let allFlips = [];
+            DIRECTIONS.forEach(([dr, dc]) => {
                 let nr = r + dr, nc = c + dc;
                 let currentFlips = [];
-                
-                while(nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && localState.board[nr][nc] !== null && localState.board[nr][nc] !== myColor) {
+                while(nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] !== null && board[nr][nc] !== color) {
                     currentFlips.push([nr, nc]);
                     nr += dr; nc += dc;
                 }
-                
-                if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && localState.board[nr][nc] === myColor && currentFlips.length > 0) {
-                    validMove = true;
-                    flips.push(...currentFlips);
+                if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === color && currentFlips.length > 0) {
+                    allFlips.push(...currentFlips);
                 }
             });
-
-            if (validMove) {
-                // ローカルの盤面データを更新してFirebaseに送信
-                localState.board[r][c] = myColor;
-                flips.forEach(([fr, fc]) => {
-                    localState.board[fr][fc] = myColor;
-                });
-                
-                const roomRef = ref(db, `rooms/${currentRoom}`);
-                await update(roomRef, {
-                    board: localState.board,
-                    turn: localState.turn + 1
-                });
-            }
+            return allFlips;
         }
 
-        // 盤面の描画
-        function renderBoard(boardData) {
+        function getAllValidMoves(board, color) {
+            let validMoves = [];
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (getFlips(board, r, c, color).length > 0) validMoves.push(`${r},${c}`);
+                }
+            }
+            return validMoves;
+        }
+
+        async function makeMove(r, c) {
+            if (myColor === 'spectator' || !localState) return;
+            if (myColor !== PLAYERS[localState.turn % 3]) return;
+
+            const flips = getFlips(localState.board, r, c, myColor);
+            if (flips.length === 0) return;
+
+            localState.board[r][c] = myColor;
+            flips.forEach(([fr, fc]) => localState.board[fr][fc] = myColor);
+            
+            await update(ref(db, `rooms/${currentRoom}`), { board: localState.board, turn: localState.turn + 1 });
+        }
+
+        async function passTurn() {
+            if (myColor === 'spectator' || !localState) return;
+            if (myColor !== PLAYERS[localState.turn % 3]) return;
+            await update(ref(db, `rooms/${currentRoom}`), { turn: localState.turn + 1 });
+        }
+
+        function renderBoard(boardData, hints = []) {
             const boardEl = document.getElementById('board');
             boardEl.innerHTML = '';
             for (let r = 0; r < BOARD_SIZE; r++) {
@@ -183,9 +204,8 @@
                 for (let c = 0; c < BOARD_SIZE; c++) {
                     const cell = document.createElement('div');
                     cell.className = 'cell';
-                    if (myColor !== 'spectator') {
-                        cell.onclick = () => makeMove(r, c);
-                    }
+                    if (hints.includes(`${r},${c}`)) cell.className += ' hint';
+                    if (myColor !== 'spectator') cell.onclick = () => makeMove(r, c);
                     
                     if (row[c]) {
                         const disc = document.createElement('div');
@@ -197,10 +217,9 @@
             }
         }
 
-        // ボタンのイベント登録
         document.getElementById('btn-join').onclick = () => joinGame(false);
         document.getElementById('btn-spectate').onclick = () => joinGame(true);
+        document.getElementById('btn-pass').onclick = passTurn;
     </script>
 </body>
-</html>
 </html>
