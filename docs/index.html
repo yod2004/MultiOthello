@@ -119,7 +119,6 @@
         const PLAYER_NAMES = { 'black': '⚫黒', 'white': '⚪白', 'red': '🔴赤', 'blue': '🔵青' };
         const DIRECTIONS = [[-1,-1], [-1,0], [-1,1], [0,-1], [0,1], [1,-1], [1,0], [1,1]];
 
-        // 【修正】即死を回避するための初期盤面生成ロジック
         function createInitialBoard(size, playersCount) {
             const board = Array(size).fill(null).map(() => Array(size).fill(null));
             const m = Math.floor(size / 2);
@@ -132,7 +131,6 @@
                 board[m-1][m] = 'white'; board[m][m-1] = 'white';
                 if(size >= 6) { board[m-2][m-1] = 'red'; board[m+1][m] = 'red'; }
             } else if (playersCount === 4) {
-                // 4人の場合は中央に4x4（各プレイヤー4個ずつ）を配置して即死を防ぐ
                 const p = ['black', 'white', 'red', 'blue'];
                 for(let r = 0; r < 4; r++) {
                     for(let c = 0; c < 4; c++) {
@@ -167,6 +165,7 @@
             const snapshot = await get(roomRef);
 
             if (!snapshot.exists()) {
+                // 新規作成
                 boardSize = reqSize;
                 maxPlayers = reqPlayers;
                 const newState = { 
@@ -182,23 +181,41 @@
                 myColor = isSpectator ? 'spectator' : 'black';
             } else {
                 const state = snapshot.val();
-                boardSize = state.settings.size;
-                maxPlayers = state.settings.maxPlayers;
                 
-                state.players = state.players || {};
-                const currentPlayers = Object.values(state.players);
-
-                if (isSpectator || currentPlayers.length >= maxPlayers || state.status === 'finished') {
-                    myColor = 'spectator';
+                // ★追加：すでに終わっている合言葉の場合は、部屋をリセットして第2回戦を始める
+                if (state.status === 'finished' && !isSpectator) {
+                    boardSize = state.settings.size;
+                    maxPlayers = state.settings.maxPlayers;
+                    const newState = { 
+                        settings: { size: boardSize, maxPlayers: maxPlayers },
+                        board: createInitialBoard(boardSize, maxPlayers), 
+                        turn: 0, 
+                        passes: 0,
+                        status: 'playing',
+                        players: { [myClientId]: 'black' } // リセットした人が黒になる
+                    };
+                    await set(roomRef, newState);
+                    myColor = 'black';
                 } else {
-                    const activeColors = ALL_PLAYERS.slice(0, maxPlayers);
-                    const availableColor = activeColors.find(c => !currentPlayers.includes(c));
-                    if(availableColor) {
-                        state.players[myClientId] = availableColor;
-                        await update(roomRef, { players: state.players });
-                        myColor = availableColor;
-                    } else {
+                    // 既存の進行中のゲームに参加
+                    boardSize = state.settings.size;
+                    maxPlayers = state.settings.maxPlayers;
+                    
+                    state.players = state.players || {};
+                    const currentPlayers = Object.values(state.players);
+
+                    if (isSpectator || currentPlayers.length >= maxPlayers || state.status === 'finished') {
                         myColor = 'spectator';
+                    } else {
+                        const activeColors = ALL_PLAYERS.slice(0, maxPlayers);
+                        const availableColor = activeColors.find(c => !currentPlayers.includes(c));
+                        if(availableColor) {
+                            state.players[myClientId] = availableColor;
+                            await update(roomRef, { players: state.players });
+                            myColor = availableColor;
+                        } else {
+                            myColor = 'spectator';
+                        }
                     }
                 }
             }
@@ -214,6 +231,11 @@
             onValue(roomRef, (snap) => {
                 const data = snap.val();
                 if (data) {
+                    // もし見ている画面の裏で誰かがリセット（第2回戦開始）したら、モーダルを閉じて盤面を更新する
+                    if (data.status === 'playing') {
+                        document.getElementById('result-modal').style.display = 'none';
+                    }
+
                     boardSize = data.settings.size;
                     maxPlayers = data.settings.maxPlayers;
                     data.board = parseBoard(data.board, boardSize);
